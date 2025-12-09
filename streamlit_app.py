@@ -48,7 +48,7 @@ def load_trained_model():
     try:
         # Load the full training model
         # Ensure your model file is named 'HwTR_V4.h5' and sits in the same directory
-        model_path = "./HwTR_V4.h5" 
+        model_path = "HwTR_V4.h5" 
         
         if not os.path.exists(model_path):
             return None, "Model file 'HwTR_V4.h5' not found."
@@ -151,10 +151,8 @@ def decode_prediction(pred):
         
     return output_text[0]
 
-# ---------------------------------------------------------
-# 4. APP UI
-# ---------------------------------------------------------
 
+# APP UI
 st.title("📝 CNN-BiLSTM Handwriting Reader")
 st.markdown("Upload an image of a single word (alphanumeric), and the model will transcribe it.")
 
