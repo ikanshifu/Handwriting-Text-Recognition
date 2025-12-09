@@ -6,9 +6,7 @@ from PIL import Image
 import tempfile
 import os
 
-# ---------------------------------------------------------
-# 1. CONFIGURATION & CONSTANTS
-# ---------------------------------------------------------
+# a. Initial Configuration
 st.set_page_config(page_title="Handwriting Recognition", page_icon="📝")
 
 # Dimensions defined in your notebook
@@ -25,9 +23,7 @@ letters = (
 )
 num_classes = len(letters) + 1
 
-# ---------------------------------------------------------
-# 2. CUSTOM LAYER & MODEL LOADING
-# ---------------------------------------------------------
+# Custom Layer and Model Loadings
 
 # We must define the custom layer class so Keras can load the model file
 class CTCLayer(tf.keras.layers.Layer):
@@ -44,7 +40,6 @@ class CTCLayer(tf.keras.layers.Layer):
 
 @st.cache_resource
 def load_trained_model():
-    """Loads the HwTR_V4.h5 model and extracts the inference part."""
     try:
         # Load the full training model
         # Ensure your model file is named 'HwTR_V4.h5' and sits in the same directory
@@ -67,10 +62,8 @@ def load_trained_model():
         return prediction_model, None
     except Exception as e:
         return None, str(e)
-
-# ---------------------------------------------------------
-# 3. PREPROCESSING (Matched to training_v4.ipynb)
-# ---------------------------------------------------------
+    
+# b.Preprocessing
 
 def add_padding(img, old_w, old_h, new_w, new_h):
     h1, h2 = int((new_h - old_h) / 2), int((new_h - old_h) / 2) + old_h
@@ -152,9 +145,9 @@ def decode_prediction(pred):
     return output_text[0]
 
 
-# APP UI
-st.title("📝 CNN-BiLSTM Handwriting Reader")
-st.markdown("Upload an image of a single word (alphanumeric), and the model will transcribe it.")
+# c. APP UI
+st.title("📝OCR Based Handwriting Reader For Cursive Writing")
+st.markdown("Please upload an image of a word written on a piece of paper, and the model will transcribe it.")
 
 # Load Model
 model, error = load_trained_model()
