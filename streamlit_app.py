@@ -41,20 +41,24 @@ class CTCLayer(tf.keras.layers.Layer):
 @st.cache_resource
 def load_trained_model():
     try:
-        # Load the full training model
-        # Ensure your model file is named 'HwTR_V4.h5' and sits in the same directory
         model_path = "HwTR_V4.h5" 
         
         if not os.path.exists(model_path):
             return None, "Model file 'HwTR_V4.h5' not found."
 
+        # --- THE FIX IS HERE ---
+        # We explicitly map "LSTM" and "Bidirectional" to their TF implementations
+        custom_objects = {
+            "CTCLayer": CTCLayer,
+            "LSTM": tf.keras.layers.LSTM,
+            "Bidirectional": tf.keras.layers.Bidirectional
+        }
+
         model = tf.keras.models.load_model(
             model_path, 
-            custom_objects={"CTCLayer": CTCLayer}
+            custom_objects=custom_objects
         )
         
-        # Extract the inference part: Input -> Softmax Output
-        # Your notebook summary shows input layer name is 'input' and output is 'softmax'
         image_input = model.get_layer("input").input
         output_layer = model.get_layer("softmax").output
         prediction_model = tf.keras.models.Model(image_input, output_layer)
