@@ -32,33 +32,40 @@ class CTCLayer(tf.keras.layers.Layer):
         self.loss_fn = tf.keras.backend.ctc_batch_cost
 
     def call(self, y_true, y_pred, input_length, label_length):
-        # We don't need the actual loss calculation during inference
         return y_pred
     
     def get_config(self):
         return super().get_config()
 
+# 1. Define a "Patched" LSTM that ignores 'time_major'
+class PatchedLSTM(tf.keras.layers.LSTM):
+    def __init__(self, *args, **kwargs):
+        # Remove the problematic argument if it exists
+        if 'time_major' in kwargs:
+            kwargs.pop('time_major')
+        super().__init__(*args, **kwargs)
+
 @st.cache_resource
 def load_trained_model():
     try:
         model_path = "HwTR_V4.h5" 
-        
         if not os.path.exists(model_path):
-            return None, "Model file 'HwTR_V4.h5' not found."
+            return None, "Model file not found."
 
-        # --- THE FIX IS HERE ---
-        # We explicitly map "LSTM" and "Bidirectional" to their TF implementations
+        # 2. Map the "LSTM" class in the file to our "PatchedLSTM"
         custom_objects = {
             "CTCLayer": CTCLayer,
-            "LSTM": tf.keras.layers.LSTM,
+            "LSTM": PatchedLSTM,                 # Map 'LSTM' to our patched version
             "Bidirectional": tf.keras.layers.Bidirectional
         }
 
         model = tf.keras.models.load_model(
             model_path, 
-            custom_objects=custom_objects
+            custom_objects=custom_objects,
+            compile=False # Optional: skips compiling loss functions (avoids other errors)
         )
         
+        # Extract inference part
         image_input = model.get_layer("input").input
         output_layer = model.get_layer("softmax").output
         prediction_model = tf.keras.models.Model(image_input, output_layer)
