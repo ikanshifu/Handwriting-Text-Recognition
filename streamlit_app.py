@@ -26,6 +26,7 @@ num_classes = len(letters) + 1
 # Custom Layer and Model Loadings
 
 # We must define the custom layer class so Keras can load the model file
+@tf.keras.utils.register_keras_serializable()
 class CTCLayer(tf.keras.layers.Layer):
     def __init__(self, name=None):
         super().__init__(name=name)
@@ -37,10 +38,12 @@ class CTCLayer(tf.keras.layers.Layer):
     def get_config(self):
         return super().get_config()
 
-# 1. Define a "Patched" LSTM that ignores 'time_major'
+# 2. Register PatchedLSTM (The fix for 'time_major')
+@tf.keras.utils.register_keras_serializable()
 class PatchedLSTM(tf.keras.layers.LSTM):
     def __init__(self, *args, **kwargs):
-        # Remove the problematic argument if it exists
+        # The 'time_major' argument exists in Keras 2 but was removed in Keras 3.
+        # We catch it here and throw it away so Keras 3 doesn't crash.
         if 'time_major' in kwargs:
             kwargs.pop('time_major')
         super().__init__(*args, **kwargs)
@@ -49,23 +52,25 @@ class PatchedLSTM(tf.keras.layers.LSTM):
 def load_trained_model():
     try:
         model_path = "HwTR_V4.h5" 
+        
         if not os.path.exists(model_path):
-            return None, "Model file not found."
+            return None, "Model file 'HwTR_V4.h5' not found."
 
-        # 2. Map the "LSTM" class in the file to our "PatchedLSTM"
+        # Map the old "LSTM" to our new "PatchedLSTM"
         custom_objects = {
             "CTCLayer": CTCLayer,
-            "LSTM": PatchedLSTM,                 # Map 'LSTM' to our patched version
+            "LSTM": PatchedLSTM,
             "Bidirectional": tf.keras.layers.Bidirectional
         }
 
+        # compile=False is crucial here to avoid other loss-function errors
         model = tf.keras.models.load_model(
             model_path, 
             custom_objects=custom_objects,
-            compile=False # Optional: skips compiling loss functions (avoids other errors)
+            compile=False 
         )
         
-        # Extract inference part
+        # Extract the inference part (Input -> Softmax)
         image_input = model.get_layer("input").input
         output_layer = model.get_layer("softmax").output
         prediction_model = tf.keras.models.Model(image_input, output_layer)
