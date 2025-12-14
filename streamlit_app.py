@@ -12,7 +12,7 @@ st.set_page_config(page_title="Handwriting Recognition V9", page_icon="📝")
 IMG_W = 128
 IMG_H = 64
 
-# Vocabulary
+# Vocabulary (From inference.ipynb)
 letters = (
     [' '] +
     [str(d) for d in range(10)] +
@@ -22,54 +22,75 @@ letters = (
 num_classes = len(letters) + 1
 
 # ---------------------------------------------------------
-# 2. MODEL RECONSTRUCTION
+# 2. MODEL ARCHITECTURE (From HwTR.py)
 # ---------------------------------------------------------
 
-def build_inference_model():
-    """Manually creates the model structure."""
+def build_model_from_hwtr():
+    """
+    Replicates the exact architecture defined in HwTR.py.
+    This allows us to load weights without deserialization errors.
+    """
+    # Input Layer (Explicit name 'input' matches HwTR.py)
     input_data = tf.keras.layers.Input(name='input', shape=(IMG_W, IMG_H, 1), dtype='float32')
 
-    # --- CNN Block ---
-    x = tf.keras.layers.Conv2D(64, (3,3), padding='same', kernel_initializer='he_normal', name='conv1')(input_data)
-    x = tf.keras.layers.BatchNormalization(name='bn1')(x)
-    x = tf.keras.layers.Activation('relu')(x)
-    x = tf.keras.layers.MaxPooling2D((2,2), name='pool1')(x)
-
-    x = tf.keras.layers.Conv2D(128, (3,3), padding='same', kernel_initializer='he_normal', name='conv2')(x)
-    x = tf.keras.layers.BatchNormalization(name='bn2')(x)
-    x = tf.keras.layers.Activation('relu')(x)
-    x = tf.keras.layers.MaxPooling2D((2,2), name='pool2')(x)
-
-    x = tf.keras.layers.Conv2D(256, (3,3), padding='same', kernel_initializer='he_normal', name='conv3')(x)
-    x = tf.keras.layers.BatchNormalization(name='bn3')(x)
-    x = tf.keras.layers.Activation('relu')(x)
-    x = tf.keras.layers.Conv2D(256, (3,3), padding='same', kernel_initializer='he_normal', name='conv4')(x)
-    x = tf.keras.layers.BatchNormalization(name='bn4')(x)
-    x = tf.keras.layers.Activation('relu')(x)
-    x = tf.keras.layers.MaxPooling2D((1,2), name='pool3')(x)
-
-    x = tf.keras.layers.Conv2D(512, (3,3), padding='same', kernel_initializer='he_normal', name='conv5')(x)
-    x = tf.keras.layers.BatchNormalization(name='bn5')(x)
-    x = tf.keras.layers.Activation('relu')(x)
-    x = tf.keras.layers.Conv2D(512, (3,3), padding='same', kernel_initializer='he_normal', name='conv6')(x)
-    x = tf.keras.layers.BatchNormalization(name='bn6')(x)
-    x = tf.keras.layers.Activation('relu')(x)
-    x = tf.keras.layers.MaxPooling2D((1,2), name='pool4')(x)
+    # --- CNN Block (VGG Style) ---
     
-    x = tf.keras.layers.Conv2D(512, (2,2), padding='same', kernel_initializer='he_normal', name='conv7')(x)
-    x = tf.keras.layers.BatchNormalization(name='bn7')(x)
+    # Block 1
+    x = tf.keras.layers.Conv2D(64, (3,3), padding='same', kernel_initializer='he_normal')(input_data)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.MaxPooling2D((2,2))(x)
+
+    # Block 2
+    x = tf.keras.layers.Conv2D(128, (3,3), padding='same', kernel_initializer='he_normal')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.MaxPooling2D((2,2))(x)
+
+    # Block 3
+    x = tf.keras.layers.Conv2D(256, (3,3), padding='same', kernel_initializer='he_normal')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.Conv2D(256, (3,3), padding='same', kernel_initializer='he_normal')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.MaxPooling2D((1,2))(x)
+
+    # Block 4
+    x = tf.keras.layers.Conv2D(512, (3,3), padding='same', kernel_initializer='he_normal')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.Conv2D(512, (3,3), padding='same', kernel_initializer='he_normal')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.MaxPooling2D((1,2))(x)
+    
+    # Block 5
+    x = tf.keras.layers.Conv2D(512, (2,2), padding='same', kernel_initializer='he_normal')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.Activation('relu')(x)
 
-    # --- Reshape & Dense ---
-    target_shape = (32, 2048) 
-    x = tf.keras.layers.Reshape(target_shape=target_shape, name='reshape')(x)
-    x = tf.keras.layers.Dense(64, activation='relu', kernel_initializer='he_normal', name='dense1')(x)
+    # --- Reshape Logic ---
+    # Calculation:
+    # Input: (128, 64)
+    # Pool1 (2,2) -> (64, 32)
+    # Pool2 (2,2) -> (32, 16)
+    # Pool3 (1,2) -> (32, 8)
+    # Pool4 (1,2) -> (32, 4)
+    # Output of Conv5 is (32, 4, 512)
+    # Reshape target: (32, 4 * 512) = (32, 2048)
     
-    # --- RNN ---
-    lstm1 = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(256, return_sequences=True, dropout=0.25), name='lstm1')(x)
-    lstm2 = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(256, return_sequences=True, dropout=0.25), name='lstm2')(lstm1)
+    x = tf.keras.layers.Reshape(target_shape=(32, 2048))(x)
+    x = tf.keras.layers.Dense(64, activation='relu', kernel_initializer='he_normal')(x)
+    
+    # --- RNN (BiLSTM) ---
+    x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(256, return_sequences=True, dropout=0.25))(x)
+    x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(256, return_sequences=True, dropout=0.25))(x)
 
-    output = tf.keras.layers.Dense(num_classes, activation='softmax', name='softmax')(lstm2)
+    # --- Output ---
+    # Explicit name 'softmax' matches HwTR.py
+    output = tf.keras.layers.Dense(num_classes, activation='softmax', name='softmax')(x)
+
     model = tf.keras.models.Model(inputs=input_data, outputs=output)
     return model
 
@@ -80,29 +101,33 @@ def load_model_weights():
         return None, f"Model file '{model_path}' not found."
     
     try:
-        model = build_inference_model()
-        # load_weights only loads the numbers, ignoring file structure issues
+        # 1. Build the clean architecture
+        model = build_model_from_hwtr()
+        
+        # 2. Load weights
+        # We use by_name=True to try and match layers even if the architecture file has extra training layers
+        # skip_mismatch=True ignores errors from the missing CTC loss layer
         model.load_weights(model_path, by_name=True, skip_mismatch=True)
+        
         return model, None
     except Exception as e:
         return None, str(e)
 
 # ---------------------------------------------------------
-# 3. PREPROCESSING (FIXED: Grayscale First)
+# 3. PREPROCESSING
 # ---------------------------------------------------------
 
 def add_padding(img, old_w, old_h, new_w, new_h):
     h1, h2 = int((new_h - old_h) / 2), int((new_h - old_h) / 2) + old_h
     w1, w2 = int((new_w - old_w) / 2), int((new_w - old_w) / 2) + old_w
     
-    # Create a 2D White Canvas (since image is grayscale)
+    # Create 2D array (white background)
     img_pad = np.ones([new_h, new_w]) * 255
     img_pad[h1:h2, w1:w2] = img
     return img_pad
 
 def fix_size(img, target_w, target_h):
     h, w = img.shape[:2]
-    # No more [..., None] here, we work with simple 2D arrays
     if w < target_w and h < target_h:
         img = add_padding(img, w, h, target_w, target_h)
     elif w >= target_w and h < target_h:
@@ -124,21 +149,20 @@ def fix_size(img, target_w, target_h):
     return img
 
 def preprocess_image(uploaded_file):
-    # 1. Load Image
+    # 1. Load image bytes
     file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
     img = cv2.imdecode(file_bytes, 1)
     
-    # 2. Convert to Grayscale IMMEDIATELY
-    # This prevents the shape mismatch error (3 channels vs 1 channel)
+    # 2. Convert to Grayscale First (Fixes the shape mismatch error)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     
-    # 3. Resize & Pad
+    # 3. Resize and Pad (Now works on 2D array)
     img = fix_size(img, IMG_W, IMG_H)
     
     # 4. Normalize
     img = img.astype(np.float32) / 255.0
     
-    # 5. Transpose & Expand
+    # 5. Transpose and Expand Dims
     img = img.T
     img = np.expand_dims(img, axis=-1)
     img = np.expand_dims(img, axis=0)
@@ -148,6 +172,7 @@ def preprocess_image(uploaded_file):
 def decode_prediction(pred):
     input_len = np.ones(pred.shape[0]) * pred.shape[1]
     results = tf.keras.backend.ctc_decode(pred, input_length=input_len, greedy=True)[0][0]
+    
     output_text = []
     for res in results:
         res = res.numpy()
@@ -168,6 +193,7 @@ model, error = load_model_weights()
 
 if error:
     st.error(f"Failed to load model: {error}")
+    st.info("Ensure 'HwTR_V9.h5' is uploaded.")
     st.stop()
 
 uploaded_file = st.file_uploader("Upload Image", type=["png", "jpg", "jpeg"])
@@ -181,5 +207,10 @@ if uploaded_file is not None:
                 preds = model.predict(processed)
                 text = decode_prediction(preds)
                 st.success(f"**Result:** {text}")
+                
+                with st.expander("Debug View"):
+                     # Show what the model actually sees (Transposed)
+                     debug_img = processed[0, :, :, 0].T
+                     st.image(debug_img, caption="Preprocessed Input", clamp=True, width=300)
             except Exception as e:
                 st.error(f"Error: {e}")
