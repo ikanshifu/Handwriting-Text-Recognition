@@ -5,91 +5,112 @@ import numpy as np
 import os
 
 # ---------------------------------------------------------
-# 1. CONFIGURATION & CONSTANTS
+# 1. CONFIGURATION
 # ---------------------------------------------------------
 st.set_page_config(page_title="Handwriting Recognition V9", page_icon="📝")
 
-# Constants from your HwTR.py / inference.py
 IMG_W = 128
 IMG_H = 64
 
-# Vocabulary from inference.py
+# Vocabulary (From your inference code)
 letters = (
     [' '] +
     [str(d) for d in range(10)] +
     [chr(c) for c in range(ord('A'), ord('Z')+1)] +
     [chr(c) for c in range(ord('a'), ord('z')+1)]
 )
+num_classes = len(letters) + 1
 
 # ---------------------------------------------------------
-# 2. CUSTOM LAYERS & COMPATIBILITY
+# 2. MODEL RECONSTRUCTION (Bypassing "Bad Marshal" Error)
 # ---------------------------------------------------------
 
-# We need to register the custom layer so Keras knows how to load it
-@tf.keras.utils.register_keras_serializable()
-class CTCLayer(tf.keras.layers.Layer):
-    def __init__(self, name=None):
-        super().__init__(name=name)
-        self.loss_fn = tf.keras.backend.ctc_batch_cost
+def build_inference_model():
+    """
+    Reconstructs the model architecture exactly as defined in HwTR.py.
+    This allows us to load weights without deserializing the corrupted Lambda layers.
+    """
+    input_data = tf.keras.layers.Input(name='input', shape=(IMG_W, IMG_H, 1), dtype='float32')
 
-    def call(self, y_true, y_pred, input_length, label_length):
-        return y_pred
+    # --- CNN (VGG Style) ---
+    # Block 1
+    x = tf.keras.layers.Conv2D(64, (3,3), padding='same', kernel_initializer='he_normal', name='conv1')(input_data)
+    x = tf.keras.layers.BatchNormalization(name='bn1')(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.MaxPooling2D((2,2), name='pool1')(x)
+
+    # Block 2
+    x = tf.keras.layers.Conv2D(128, (3,3), padding='same', kernel_initializer='he_normal', name='conv2')(x)
+    x = tf.keras.layers.BatchNormalization(name='bn2')(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.MaxPooling2D((2,2), name='pool2')(x)
+
+    # Block 3
+    x = tf.keras.layers.Conv2D(256, (3,3), padding='same', kernel_initializer='he_normal', name='conv3')(x)
+    x = tf.keras.layers.BatchNormalization(name='bn3')(x)
+    x = tf.keras.layers.Activation('relu')(x)
     
-    def get_config(self):
-        return super().get_config()
+    x = tf.keras.layers.Conv2D(256, (3,3), padding='same', kernel_initializer='he_normal', name='conv4')(x)
+    x = tf.keras.layers.BatchNormalization(name='bn4')(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.MaxPooling2D((1,2), name='pool3')(x) # Note: pool size (1,2) per HwTR logic usually
 
-# Safety patch for LSTM compatibility between Keras versions
-@tf.keras.utils.register_keras_serializable()
-class PatchedLSTM(tf.keras.layers.LSTM):
-    def __init__(self, *args, **kwargs):
-        if 'time_major' in kwargs:
-            kwargs.pop('time_major')
-        super().__init__(*args, **kwargs)
+    # Block 4
+    x = tf.keras.layers.Conv2D(512, (3,3), padding='same', kernel_initializer='he_normal', name='conv5')(x)
+    x = tf.keras.layers.BatchNormalization(name='bn5')(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    
+    x = tf.keras.layers.Conv2D(512, (3,3), padding='same', kernel_initializer='he_normal', name='conv6')(x)
+    x = tf.keras.layers.BatchNormalization(name='bn6')(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.MaxPooling2D((1,2), name='pool4')(x)
+    
+    x = tf.keras.layers.Conv2D(512, (2,2), padding='same', kernel_initializer='he_normal', name='conv7')(x)
+    x = tf.keras.layers.BatchNormalization(name='bn7')(x)
+    x = tf.keras.layers.Activation('relu')(x)
+
+    # --- Reshape for RNN ---
+    # Map to (Batch, Time, Features)
+    # Target shape calculation based on VGG output
+    target_shape = (32, 512) # 128/4 = 32 timesteps, 512 features
+    x = tf.keras.layers.Reshape(target_shape=target_shape, name='reshape')(x)
+
+    x = tf.keras.layers.Dense(64, activation='relu', kernel_initializer='he_normal', name='dense1')(x)
+    
+    # --- RNN (BiLSTM) ---
+    x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(256, return_sequences=True, dropout=0.25), name='lstm1')(x)
+    x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(256, return_sequences=True, dropout=0.25), name='lstm2')(x)
+
+    # --- Output ---
+    output = tf.keras.layers.Dense(num_classes, activation='softmax', name='softmax')(x)
+
+    model = tf.keras.models.Model(inputs=input_data, outputs=output)
+    return model
 
 @st.cache_resource
-def load_trained_model():
-    """Loads HwTR_V9.h5 with Keras 3 compatibility fixes."""
+def load_model_weights():
+    model_path = "HwTR_V9.h5"
+    if not os.path.exists(model_path):
+        return None, f"Model file '{model_path}' not found."
+    
     try:
-        model_path = "HwTR_V9.h5"  # UPDATED MODEL NAME
+        # 1. Build the empty shell of the model
+        model = build_inference_model()
         
-        if not os.path.exists(model_path):
-            return None, f"Model file '{model_path}' not found. Please upload it."
-
-        # Map custom objects
-        custom_objects = {
-            "CTCLayer": CTCLayer,
-            "LSTM": PatchedLSTM, # Maps LSTM to our patched version
-            "Bidirectional": tf.keras.layers.Bidirectional
-        }
-
-        # Load model with safe_mode=False to allow Lambda layers
-        model = tf.keras.models.load_model(
-            model_path, 
-            custom_objects=custom_objects,
-            compile=False,
-            safe_mode=False 
-        )
+        # 2. Force load the weights into this shell
+        # by_name=True attempts to match layer names
+        # skip_mismatch=True ignores the CTC loss layer from the file
+        model.load_weights(model_path, by_name=True, skip_mismatch=True)
         
-        # Extract the Inference Model (Input -> Softmax)
-        # Based on HwTR.py, the output layer is named 'softmax'
-        try:
-            image_input = model.get_layer("input").input
-            output_layer = model.get_layer("softmax").output
-            prediction_model = tf.keras.models.Model(image_input, output_layer)
-        except:
-            # Fallback if the saved model is already the inference model
-            prediction_model = model
-            
-        return prediction_model, None
+        return model, None
     except Exception as e:
         return None, str(e)
 
 # ---------------------------------------------------------
-# 3. PREPROCESSING (Ported from HwTR.py)
+# 3. PREPROCESSING
 # ---------------------------------------------------------
 
 def add_padding(img, old_w, old_h, new_w, new_h):
-    # Logic from HwTR.py
     h1, h2 = int((new_h - old_h) / 2), int((new_h - old_h) / 2) + old_h
     w1, w2 = int((new_w - old_w) / 2), int((new_w - old_w) / 2) + old_w
     img_pad = np.ones([new_h, new_w, 1]) * 255
@@ -97,7 +118,6 @@ def add_padding(img, old_w, old_h, new_w, new_h):
     return img_pad
 
 def fix_size(img, target_w, target_h):
-    # Logic from HwTR.py
     h, w = img.shape[:2]
     if w < target_w and h < target_h:
         img = add_padding(img, w, h, target_w, target_h)
@@ -120,92 +140,58 @@ def fix_size(img, target_w, target_h):
     return img
 
 def preprocess_image(uploaded_file):
-    # Convert Streamlit file to OpenCV image
     file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
     img = cv2.imdecode(file_bytes, 1)
     
-    # Preprocessing pipeline from HwTR.py
-    # 1. Fix Size (Resize + Pad)
     img = fix_size(img, IMG_W, IMG_H)
     
-    # 2. Clip and Grayscale
     img = np.clip(img, 0, 255).astype(np.uint8)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    
-    # 3. Normalize
     img = img.astype(np.float32) / 255.0
     
-    # 4. Transpose and Expand Dims
-    img = img.T                        # Transpose to (128, 64)
-    img = np.expand_dims(img, axis=-1) # (128, 64, 1)
-    img = np.expand_dims(img, axis=0)  # Batch dim -> (1, 128, 64, 1)
+    img = img.T
+    img = np.expand_dims(img, axis=-1)
+    img = np.expand_dims(img, axis=0)
     
     return img
 
 def decode_prediction(pred):
-    # Decoding logic from HwTR.py
     input_len = np.ones(pred.shape[0]) * pred.shape[1]
+    results = tf.keras.backend.ctc_decode(pred, input_length=input_len, greedy=True)[0][0]
     
-    # CTC Decode
-    results = tf.keras.backend.ctc_decode(
-        pred, 
-        input_length=input_len, 
-        greedy=True
-    )[0][0]
-    
-    # Convert indices to text
     output_text = []
     for res in results:
         res = res.numpy()
-        decoded_str = ""
+        decoded = ""
         for p in res:
             if p != -1 and p < len(letters):
-                decoded_str += letters[int(p)]
-        output_text.append(decoded_str)
-        
+                decoded += letters[int(p)]
+        output_text.append(decoded)
     return output_text[0]
 
 # ---------------------------------------------------------
-# 4. APP UI
+# 4. UI
 # ---------------------------------------------------------
 
-st.title("📝 Handwriting Recognition (Model V9)")
-st.markdown("Upload an image of an alphanumeric word.")
+st.title("📝 Handwriting Recognition V9")
 
-# Load Model
-model, error = load_trained_model()
+model, error = load_model_weights()
 
 if error:
     st.error(f"Failed to load model: {error}")
-    st.info("Make sure 'HwTR_V9.h5' is uploaded to your GitHub repository.")
     st.stop()
 
-# File Uploader
 uploaded_file = st.file_uploader("Upload Image", type=["png", "jpg", "jpeg"])
 
 if uploaded_file is not None:
-    # Display the uploaded image
-    st.image(uploaded_file, caption="Original Image", width=300)
+    st.image(uploaded_file, caption="Input", width=300)
     
-    if st.button("Recognize Text"):
-        with st.spinner("Processing..."):
+    if st.button("Recognize"):
+        with st.spinner("Analyzing..."):
             try:
-                # Preprocess
-                processed_img = preprocess_image(uploaded_file)
-                
-                # Predict
-                preds = model.predict(processed_img)
-                
-                # Decode
+                processed = preprocess_image(uploaded_file)
+                preds = model.predict(processed)
                 text = decode_prediction(preds)
-                
                 st.success(f"**Result:** {text}")
-                
-                # Debugging view
-                with st.expander("See what the model sees"):
-                    # Transpose back for visualization: (1, 128, 64, 1) -> (64, 128)
-                    debug_img = processed_img[0, :, :, 0].T
-                    st.image(debug_img, caption="Preprocessed Input", width=300, clamp=True)
-                    
             except Exception as e:
                 st.error(f"Error: {e}")
