@@ -1,17 +1,27 @@
 import tensorflow as tf
-from HwR import *
+from HwTR import *
 import numpy as np
 import os
 
-MODEL_PATH = "HwR.h5"
+MODEL_PATH = "HwTR_V7.h5"
 IMG_H = 64
 IMG_W = 128
+LETTERS = (
+    [' '] +
+    [str(d) for d in range(10)] +
+    [chr(c) for c in range(ord('A'), ord('Z')+1)] +
+    [chr(c) for c in range(ord('a'), ord('z')+1)]
+)
 
-model = HwRModel(MODEL_PATH, IMG_W, IMG_H)
-test_image = "meant.png"
+hwr = HwTR(
+    img_w=128,
+    img_h=64,
+    max_text_length=16,
+    num_classes=len(LETTERS)+1,
+    letters=LETTERS
+)
 
-def recognize_img(image):
-    text = model.recognize(image)
-    return text
+hwr.load(MODEL_PATH)
+test_image = "demo.png"
 
-print(f"Result : {recognize_img(test_image)}")
+print(f"Result : {hwr.preprocess_and_recognize(test_image)}")
