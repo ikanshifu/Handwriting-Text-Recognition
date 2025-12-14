@@ -12,7 +12,7 @@ st.set_page_config(page_title="Handwriting Recognition V9", page_icon="📝")
 IMG_W = 128
 IMG_H = 64
 
-# Vocabulary (From your inference code)
+# Vocabulary
 letters = (
     [' '] +
     [str(d) for d in range(10)] +
@@ -22,17 +22,17 @@ letters = (
 num_classes = len(letters) + 1
 
 # ---------------------------------------------------------
-# 2. MODEL RECONSTRUCTION (Bypassing "Bad Marshal" Error)
+# 2. MODEL RECONSTRUCTION
 # ---------------------------------------------------------
 
 def build_inference_model():
     """
-    Reconstructs the model architecture exactly as defined in HwTR.py.
-    This allows us to load weights without deserializing the corrupted Lambda layers.
+    Manually creates the model structure.
+    FIXED: Reshape layer now accounts for remaining height dimension.
     """
     input_data = tf.keras.layers.Input(name='input', shape=(IMG_W, IMG_H, 1), dtype='float32')
 
-    # --- CNN (VGG Style) ---
+    # --- CNN Block ---
     # Block 1
     x = tf.keras.layers.Conv2D(64, (3,3), padding='same', kernel_initializer='he_normal', name='conv1')(input_data)
     x = tf.keras.layers.BatchNormalization(name='bn1')(x)
@@ -49,17 +49,15 @@ def build_inference_model():
     x = tf.keras.layers.Conv2D(256, (3,3), padding='same', kernel_initializer='he_normal', name='conv3')(x)
     x = tf.keras.layers.BatchNormalization(name='bn3')(x)
     x = tf.keras.layers.Activation('relu')(x)
-    
     x = tf.keras.layers.Conv2D(256, (3,3), padding='same', kernel_initializer='he_normal', name='conv4')(x)
     x = tf.keras.layers.BatchNormalization(name='bn4')(x)
     x = tf.keras.layers.Activation('relu')(x)
-    x = tf.keras.layers.MaxPooling2D((1,2), name='pool3')(x) # Note: pool size (1,2) per HwTR logic usually
+    x = tf.keras.layers.MaxPooling2D((1,2), name='pool3')(x)
 
     # Block 4
     x = tf.keras.layers.Conv2D(512, (3,3), padding='same', kernel_initializer='he_normal', name='conv5')(x)
     x = tf.keras.layers.BatchNormalization(name='bn5')(x)
     x = tf.keras.layers.Activation('relu')(x)
-    
     x = tf.keras.layers.Conv2D(512, (3,3), padding='same', kernel_initializer='he_normal', name='conv6')(x)
     x = tf.keras.layers.BatchNormalization(name='bn6')(x)
     x = tf.keras.layers.Activation('relu')(x)
@@ -69,20 +67,21 @@ def build_inference_model():
     x = tf.keras.layers.BatchNormalization(name='bn7')(x)
     x = tf.keras.layers.Activation('relu')(x)
 
-    # --- Reshape for RNN ---
-    # Map to (Batch, Time, Features)
-    # Target shape calculation based on VGG output
-    target_shape = (32, 512) # 128/4 = 32 timesteps, 512 features
+    # --- Reshape & Dense ---
+    # FIXED CALCULATION:
+    # After pool4, the shape is (32, 4, 512).
+    # We must flatten Height(4) * Channels(512) = 2048.
+    target_shape = (32, 2048) 
+    
     x = tf.keras.layers.Reshape(target_shape=target_shape, name='reshape')(x)
-
     x = tf.keras.layers.Dense(64, activation='relu', kernel_initializer='he_normal', name='dense1')(x)
     
     # --- RNN (BiLSTM) ---
-    x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(256, return_sequences=True, dropout=0.25), name='lstm1')(x)
-    x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(256, return_sequences=True, dropout=0.25), name='lstm2')(x)
+    lstm1 = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(256, return_sequences=True, dropout=0.25), name='lstm1')(x)
+    lstm2 = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(256, return_sequences=True, dropout=0.25), name='lstm2')(lstm1)
 
     # --- Output ---
-    output = tf.keras.layers.Dense(num_classes, activation='softmax', name='softmax')(x)
+    output = tf.keras.layers.Dense(num_classes, activation='softmax', name='softmax')(lstm2)
 
     model = tf.keras.models.Model(inputs=input_data, outputs=output)
     return model
@@ -90,16 +89,15 @@ def build_inference_model():
 @st.cache_resource
 def load_model_weights():
     model_path = "HwTR_V9.h5"
+    
     if not os.path.exists(model_path):
         return None, f"Model file '{model_path}' not found."
     
     try:
-        # 1. Build the empty shell of the model
+        # 1. Build the correct architecture
         model = build_inference_model()
         
-        # 2. Force load the weights into this shell
-        # by_name=True attempts to match layer names
-        # skip_mismatch=True ignores the CTC loss layer from the file
+        # 2. Load the weights (ignoring mismatching layers like CTC loss)
         model.load_weights(model_path, by_name=True, skip_mismatch=True)
         
         return model, None
@@ -142,23 +140,18 @@ def fix_size(img, target_w, target_h):
 def preprocess_image(uploaded_file):
     file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
     img = cv2.imdecode(file_bytes, 1)
-    
     img = fix_size(img, IMG_W, IMG_H)
-    
     img = np.clip(img, 0, 255).astype(np.uint8)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     img = img.astype(np.float32) / 255.0
-    
     img = img.T
     img = np.expand_dims(img, axis=-1)
     img = np.expand_dims(img, axis=0)
-    
     return img
 
 def decode_prediction(pred):
     input_len = np.ones(pred.shape[0]) * pred.shape[1]
     results = tf.keras.backend.ctc_decode(pred, input_length=input_len, greedy=True)[0][0]
-    
     output_text = []
     for res in results:
         res = res.numpy()
@@ -185,7 +178,6 @@ uploaded_file = st.file_uploader("Upload Image", type=["png", "jpg", "jpeg"])
 
 if uploaded_file is not None:
     st.image(uploaded_file, caption="Input", width=300)
-    
     if st.button("Recognize"):
         with st.spinner("Analyzing..."):
             try:
