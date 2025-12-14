@@ -25,15 +25,3 @@ hwr.load(MODEL_PATH)
 test_image = "demo.png"
 
 print(f"Result : {hwr.preprocess_and_recognize(test_image)}")
-
-import tensorflow as tf
-
-model = tf.keras.models.load_model("HwTR_V9.h5", custom_objects={"CTCLayer": CTCLayer})
-
-image_input = model.get_layer("input").input
-output_layer = model.get_layer("softmax").output
-inference_model = tf.keras.models.Model(image_input, output_layer)
-
-inference_model.save("HwTR_V9_inference.h5")
-
-print("Success! Download 'HwTR_V9_inference.h5' and upload it to GitHub.")
