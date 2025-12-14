@@ -1,11 +1,9 @@
 import streamlit as st
 import os
 import tempfile
-from HwTR import HwTR  # Import your custom class directly
+from HwTR import HwTR 
 
-# ---------------------------------------------------------
 # 1. CONFIGURATION
-# ---------------------------------------------------------
 st.set_page_config(page_title="Handwriting Recognition V9", page_icon="📝")
 
 # Configuration matching your training/inference scripts
@@ -22,9 +20,7 @@ letters = (
 )
 num_classes = len(letters) + 1
 
-# ---------------------------------------------------------
-# 2. MODEL LOADING (Using HwTR Class)
-# ---------------------------------------------------------
+# 2. MODEL LOADING
 
 @st.cache_resource
 def get_hwr_model():
@@ -55,9 +51,7 @@ def get_hwr_model():
     except Exception as e:
         return None, str(e)
 
-# ---------------------------------------------------------
 # 3. UI
-# ---------------------------------------------------------
 
 st.title("📝 Handwriting Recognition V9")
 
