@@ -1,5 +1,6 @@
 import streamlit as st
 import tensorflow as tf
+from HwTR import HwTR 
 import cv2
 import numpy as np
 import os

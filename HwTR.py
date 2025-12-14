@@ -4,14 +4,6 @@ import tensorflow as tf
 from tensorflow.keras import layers, Model
 from tensorflow.keras import backend as F
 
-
-import numpy as np
-import cv2
-import tensorflow as tf
-from tensorflow.keras import layers, Model
-from tensorflow.keras import backend as F
-
-
 class HwTR:
     def __init__(self, img_w, img_h, max_text_length, num_classes, letters):
         self.IMG_W = img_w
