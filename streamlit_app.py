@@ -4,7 +4,7 @@ import tempfile
 from HwTR import HwTR 
 
 # 1. CONFIGURATION
-st.set_page_config(page_title="Handwriting Recognition V9", page_icon="📝")
+st.set_page_config(page_title="Handwriting Recognition", page_icon="📝")
 
 # Configuration matching your training/inference scripts
 IMG_W = 128
