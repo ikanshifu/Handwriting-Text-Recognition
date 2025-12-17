@@ -1,8 +1,8 @@
-# 🎈 Blank app template
+# 🎈 Handwriting App Recognition
 
-A simple Streamlit app template for you to modify!
+An app to recognize handwritten text on a paper. That's it.
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://blank-app-template.streamlit.app/)
+Link: https://handwriting-text-recognition.streamlit.app/
 
 ### How to run it on your own machine
 
