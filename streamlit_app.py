@@ -53,7 +53,7 @@ def get_hwr_model():
 
 # 3. UI
 
-st.title("📝 Handwriting Recognition V9")
+st.title("VGG-BiLSTM-CTC Based Handwritten Text Recognizer📝")
 
 # Initialize the HwTR instance
 hwr_instance, error = get_hwr_model()
